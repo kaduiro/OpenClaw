@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+.env
+config/openclaw.json5
+workspace/memory/daily/*.md
+workspace/outputs/morning-briefs/*.md
+workspace/outputs/triage-logs/*.md
+workspace/outputs/triage-logs/.processed-files.json
+coverage/
+tmp/
+

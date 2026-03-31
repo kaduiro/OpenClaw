@@ -1,0 +1,98 @@
+{
+  env: {
+    GEMINI_API_KEY: "${GEMINI_API_KEY}",
+    OPENCLAW_GATEWAY_TOKEN: "${OPENCLAW_GATEWAY_TOKEN}",
+  },
+
+  gateway: {
+    mode: "local",
+    port: 18789,
+    bind: "loopback",
+    auth: {
+      mode: "token",
+      token: "${OPENCLAW_GATEWAY_TOKEN}",
+      rateLimit: {
+        maxAttempts: 10,
+        windowMs: 60000,
+        lockoutMs: 300000,
+        exemptLoopback: true,
+      },
+    },
+    controlUi: {
+      enabled: true,
+      basePath: "/openclaw",
+      allowInsecureAuth: false,
+      dangerouslyDisableDeviceAuth: false,
+    },
+    tools: {
+      deny: ["browser"],
+    },
+  },
+
+  agents: {
+    defaults: {
+      model: {
+        primary: "${OPENCLAW_MODEL_PRIMARY}",
+        fallbacks: ["${OPENCLAW_MODEL_FALLBACK}"],
+      },
+      timeoutSeconds: 120,
+      thinkingDefault: "medium",
+      sandbox: {
+        mode: "all",
+        backend: "docker",
+        scope: "agent",
+        workspaceAccess: "rw",
+        docker: {
+          image: "openclaw-sandbox:bookworm-slim",
+          workdir: "/workspace",
+          binds: ["${OPENCLAW_REPO_ROOT}:/repo:rw"],
+        },
+      },
+      tools: {
+        profile: "coding",
+        elevated: {
+          enabled: false,
+        },
+      },
+    },
+    list: [
+      {
+        id: "personal",
+        default: true,
+        name: "Personal Workspace",
+        workspace: "${OPENCLAW_WORKSPACE_DIR}",
+        model: {
+          primary: "${OPENCLAW_MODEL_PRIMARY}",
+          fallbacks: ["${OPENCLAW_MODEL_FALLBACK}"],
+        },
+        tools: {
+          elevated: {
+            enabled: false,
+          },
+        },
+      },
+    ],
+  },
+
+  skills: {
+    load: {
+      extraDirs: ["${OPENCLAW_WORKSPACE_DIR}/skills"],
+    },
+  },
+
+  cron: {
+    sessionRetention: "24h",
+    runLog: {
+      maxBytes: "1mb",
+      keepLines: 400,
+    },
+  },
+
+  ui: {
+    assistant: {
+      name: "OpenClaw Personal Workspace",
+      avatar: "OC",
+    },
+  },
+}
+

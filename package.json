@@ -1,0 +1,24 @@
+{
+  "name": "openclaw-personal-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "scaffold": "node src/cli/scaffold-workspace.mjs --workspace ./workspace",
+    "validate:config": "node src/cli/validate-config.mjs --config ./config/openclaw.json5.example",
+    "triage": "node src/cli/nightly-triage.mjs --workspace ./workspace",
+    "brief": "node src/cli/morning-brief.mjs --workspace ./workspace",
+    "test": "vitest run --maxWorkers=1",
+    "test:unit": "vitest run --maxWorkers=1 tests/unit",
+    "test:integration": "vitest run --maxWorkers=1 tests/integration",
+    "test:e2e": "vitest run --maxWorkers=1 tests/e2e"
+  },
+  "devDependencies": {
+    "json5": "^2.2.3",
+    "vitest": "^3.2.4"
+  }
+}

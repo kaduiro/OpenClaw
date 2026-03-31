@@ -1,0 +1,33 @@
+{
+  "commands": {
+    "git-status": {
+      "description": "Inspect backup repository status before manual action.",
+      "command": "git",
+      "args": [
+        "status",
+        "--short",
+        "--branch"
+      ]
+    },
+    "git-fetch": {
+      "description": "Refresh Git remotes before an operator review.",
+      "command": "git",
+      "args": [
+        "fetch",
+        "--all",
+        "--prune"
+      ]
+    },
+    "backup-run": {
+      "description": "Run the repository backup workflow.",
+      "command": "./scripts/backup.sh",
+      "args": []
+    },
+    "healthcheck": {
+      "description": "Run the local environment health check.",
+      "command": "./scripts/healthcheck.sh",
+      "args": []
+    }
+  }
+}
+
