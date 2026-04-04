@@ -45,13 +45,7 @@
         docker: {
           image: "openclaw-sandbox:bookworm-slim",
           workdir: "/workspace",
-          binds: ["${OPENCLAW_REPO_ROOT}:/repo:rw"],
-        },
-      },
-      tools: {
-        profile: "coding",
-        elevated: {
-          enabled: false,
+          binds: ["${OPENCLAW_REPO_BIND_ROOT}:/repo:rw"],
         },
       },
     },
@@ -95,4 +89,3 @@
     },
   },
 }
-

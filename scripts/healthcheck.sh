@@ -4,23 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-normalize_bin() {
-  local value="$1"
-  if [[ "${value}" =~ ^[A-Za-z]:[\\/].* ]] && command -v wslpath >/dev/null 2>&1; then
-    wslpath -u "${value}"
-    return
-  fi
-  printf '%s' "${value}"
-}
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/wsl-runtime.sh"
 
-node_target_path() {
-  local value="$1"
-  if [[ "$(basename "${NODE_BIN}")" == "node.exe" ]] && command -v wslpath >/dev/null 2>&1; then
-    wslpath -w "${value}"
-    return
-  fi
-  printf '%s' "${value}"
-}
+assert_wsl_linux_runtime "scripts/healthcheck.sh"
 
 if [[ -f "${REPO_ROOT}/.env" ]]; then
   set -a
@@ -30,29 +17,24 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
 fi
 
 export OPENCLAW_REPO_ROOT="${OPENCLAW_REPO_ROOT:-${REPO_ROOT}}"
+export OPENCLAW_REPO_BIND_ROOT="${OPENCLAW_REPO_BIND_ROOT:-${OPENCLAW_REPO_ROOT}}"
 export OPENCLAW_WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-${REPO_ROOT}/workspace}"
 export OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-${REPO_ROOT}/config/openclaw.json5}"
-NODE_BIN="${NODE_BIN:-$(command -v node || command -v node.exe || true)}"
-OPENCLAW_BIN="${OPENCLAW_BIN:-$(command -v openclaw || command -v openclaw.exe || true)}"
-DOCKER_BIN="${DOCKER_BIN:-$(command -v docker || command -v docker.exe || true)}"
-NODE_BIN="$(normalize_bin "${NODE_BIN}")"
-OPENCLAW_BIN="$(normalize_bin "${OPENCLAW_BIN}")"
-DOCKER_BIN="$(normalize_bin "${DOCKER_BIN}")"
+export OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-${HOME}/.openclaw-personal}"
 
-[[ -n "${NODE_BIN}" ]] || {
-  echo "node is required." >&2
-  exit 1
-}
+validate_posix_path "OPENCLAW_REPO_ROOT" "${OPENCLAW_REPO_ROOT}"
+validate_posix_path "OPENCLAW_REPO_BIND_ROOT" "${OPENCLAW_REPO_BIND_ROOT}"
+validate_posix_path "OPENCLAW_WORKSPACE_DIR" "${OPENCLAW_WORKSPACE_DIR}"
+validate_posix_path "OPENCLAW_CONFIG_PATH" "${OPENCLAW_CONFIG_PATH}"
+validate_posix_path "OPENCLAW_STATE_DIR" "${OPENCLAW_STATE_DIR}"
 
-[[ -n "${OPENCLAW_BIN}" ]] || {
-  echo "openclaw CLI is required." >&2
-  exit 1
-}
+NODE_BIN="$(resolve_command NODE_BIN node)"
+OPENCLAW_BIN="$(resolve_command OPENCLAW_BIN openclaw)"
+DOCKER_BIN="$(resolve_command DOCKER_BIN docker)"
 
-[[ -n "${DOCKER_BIN}" ]] || {
-  echo "docker is required for sandboxed execution." >&2
-  exit 1
-}
+ensure_command "node" "${NODE_BIN}" "node is required. In WSL, confirm \`command -v node\`."
+ensure_command "openclaw" "${OPENCLAW_BIN}" "openclaw CLI is required. In WSL, confirm \`command -v openclaw\` and \`openclaw --version\`."
+ensure_command "docker" "${DOCKER_BIN}" "docker is required. Enable Docker Desktop WSL integration and confirm \`docker version\` in WSL."
 
 [[ -f "${REPO_ROOT}/.env" ]] || {
   echo ".env is required." >&2
@@ -64,7 +46,26 @@ DOCKER_BIN="$(normalize_bin "${DOCKER_BIN}")"
   exit 1
 }
 
-"${NODE_BIN}" "$(node_target_path "${REPO_ROOT}/src/cli/scaffold-workspace.mjs")" --workspace "$(node_target_path "${OPENCLAW_WORKSPACE_DIR}")" --check
-"${NODE_BIN}" "$(node_target_path "${REPO_ROOT}/src/cli/validate-config.mjs")" --config "$(node_target_path "${OPENCLAW_CONFIG_PATH}")"
+"${NODE_BIN}" "${OPENCLAW_REPO_ROOT}/src/cli/scaffold-workspace.mjs" --workspace "${OPENCLAW_WORKSPACE_DIR}" --check
+
+OPENCLAW_REPO_ROOT="${OPENCLAW_REPO_ROOT}" \
+OPENCLAW_REPO_BIND_ROOT="${OPENCLAW_REPO_BIND_ROOT}" \
+OPENCLAW_WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR}" \
+OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" \
+OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" \
+OPENCLAW_TIMEZONE="${OPENCLAW_TIMEZONE:-Asia/Tokyo}" \
+OPENCLAW_MODEL_PRIMARY="${OPENCLAW_MODEL_PRIMARY:-google/gemini-2.5-flash}" \
+OPENCLAW_MODEL_FALLBACK="${OPENCLAW_MODEL_FALLBACK:-google/gemini-2.5-pro}" \
+"${NODE_BIN}" "${OPENCLAW_REPO_ROOT}/src/cli/validate-config.mjs" --config "${OPENCLAW_CONFIG_PATH}"
+
+OPENCLAW_REPO_ROOT="${OPENCLAW_REPO_ROOT}" \
+OPENCLAW_REPO_BIND_ROOT="${OPENCLAW_REPO_BIND_ROOT}" \
+OPENCLAW_WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR}" \
+OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" \
+OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" \
+OPENCLAW_TIMEZONE="${OPENCLAW_TIMEZONE:-Asia/Tokyo}" \
+OPENCLAW_MODEL_PRIMARY="${OPENCLAW_MODEL_PRIMARY:-google/gemini-2.5-flash}" \
+OPENCLAW_MODEL_FALLBACK="${OPENCLAW_MODEL_FALLBACK:-google/gemini-2.5-pro}" \
+"${OPENCLAW_BIN}" config validate >/dev/null
 
 echo "Healthcheck passed."

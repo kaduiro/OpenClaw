@@ -1,51 +1,50 @@
 # Architecture
 
-## Goals
+## 目的
 
-This repository scaffolds a single-user OpenClaw Personal Workspace without reimplementing OpenClaw itself.
-The control plane remains OpenClaw Gateway plus Control UI.
-The Markdown workspace under `./workspace` is the canonical personal vault and is intended to be opened directly in Obsidian.
+このリポジトリは、OpenClaw 自体を再実装せずに、単一ユーザー向けの OpenClaw Personal Workspace を構築するための雛形です。
+制御面は OpenClaw Gateway と Control UI をそのまま利用します。
+`./workspace` 配下の Markdown workspace は個人用 Vault の正本であり、そのまま Obsidian で開くことを想定しています。
 
-## System Layout
+## システム構成
 
-- OpenClaw Gateway runs externally via the official `openclaw` CLI.
-- The repo provides config, workspace bootstrap files, deterministic job runners, health checks, and test coverage.
-- The OpenClaw agent workspace is `./workspace`.
-- The sandbox bind-mounts the repo root at `/repo` so isolated jobs can invoke deterministic tooling such as `/repo/src/cli/nightly-triage.mjs`.
-- The sandbox workdir remains `/workspace`, so Markdown outputs stay inside the personal vault.
+- OpenClaw Gateway は公式 `openclaw` CLI により外部で起動します。
+- このリポジトリは config、workspace 初期化ファイル、deterministic job runner、health check、テストを提供します。
+- OpenClaw の agent workspace は `./workspace` です。
+- sandbox には repo root を `/repo` として bind mount し、`/repo/src/cli/nightly-triage.mjs` のような deterministic ツールを isolated job から呼び出せるようにします。
+- sandbox の workdir は `/workspace` のままにし、Markdown の出力が personal vault 内に収まるようにします。
 
-## Data Flow
+## データフロー
 
 ### Nightly Triage
 
-1. OpenClaw cron triggers an isolated agent turn at `23:00 Asia/Tokyo`.
-2. The workspace skill instructs the agent to run the deterministic triage CLI inside the sandbox.
-3. The CLI reads `workspace/inbox/raw/**/*.md`.
-4. It extracts memory candidates from `## Memory` and generic bullet content.
-5. It extracts next actions from `## Next Actions` and unchecked task items.
-6. It appends results to `workspace/memory/daily/YYYY-MM-DD.md` and `workspace/tasks/next-actions.md`.
-7. It writes a triage log to `workspace/outputs/triage-logs/YYYY-MM-DD.md`.
-8. It updates `workspace/outputs/triage-logs/.processed-files.json` to prevent duplicate processing of unchanged raw files.
+1. OpenClaw cron が `23:00 Asia/Tokyo` に isolated agent turn を起動します。
+2. workspace skill が agent に sandbox 内で deterministic triage CLI を実行するよう指示します。
+3. CLI は `workspace/inbox/raw/**/*.md` を読みます。
+4. `## Memory` と通常の箇条書きから memory 候補を抽出します。
+5. `## Next Actions` と未完了タスクから next actions を抽出します。
+6. 結果を `workspace/memory/daily/YYYY-MM-DD.md` と `workspace/tasks/next-actions.md` に追記します。
+7. `workspace/outputs/triage-logs/YYYY-MM-DD.md` に triage log を出力します。
+8. `workspace/outputs/triage-logs/.processed-files.json` を更新し、未変更の raw file の重複処理を防ぎます。
 
 ### Morning Brief
 
-1. OpenClaw cron triggers an isolated agent turn at `07:00 Asia/Tokyo`.
-2. The workspace skill runs the deterministic morning brief CLI in the sandbox.
-3. The CLI reads the previous daily memory file and the current next-actions file.
-4. It writes `workspace/outputs/morning-briefs/YYYY-MM-DD.md` with fixed sections.
+1. OpenClaw cron が `07:00 Asia/Tokyo` に isolated agent turn を起動します。
+2. workspace skill が sandbox 内で deterministic morning brief CLI を実行します。
+3. CLI は前日の daily memory と現在の next-actions file を読みます。
+4. 固定セクション構成で `workspace/outputs/morning-briefs/YYYY-MM-DD.md` を出力します。
 
-## Security Posture
+## セキュリティ方針
 
-- Control UI binds to loopback only.
-- Gateway auth uses token mode only.
-- `dangerouslyDisableDeviceAuth` is explicitly disabled.
-- Elevated host exec is disabled in OpenClaw config.
-- Host-side emergency execution uses `scripts/safe-host-exec.sh` and a static allowlist.
-- The template does not expose Control UI to the public internet and does not enable unrestricted host execution.
+- Control UI は loopback にのみ bind します。
+- Gateway 認証は token mode のみを使います。
+- `dangerouslyDisableDeviceAuth` は明示的に無効です。
+- OpenClaw config では elevated host exec を無効にしています。
+- host 側の緊急実行は `scripts/safe-host-exec.sh` と静的 allowlist に限定します。
+- このテンプレートでは Control UI を公開インターネットに露出せず、unrestricted host execution も有効にしません。
 
-## Future Extensions
+## 将来拡張
 
-- A LINE plugin can be added later because the deterministic job runners and workspace format are channel-agnostic.
-- Additional scheduled skills can reuse the same `/repo/src/cli/*.mjs` execution pattern.
-- Memory search, remote delivery, or plugin-specific routing can be added without changing the vault layout.
-
+- deterministic job runner と workspace format はチャネル非依存なので、将来 LINE plugin を追加できます。
+- 追加の定期実行 skill も、同じ `/repo/src/cli/*.mjs` 実行パターンを再利用できます。
+- Vault 構成を変えずに、memory search、remote delivery、plugin ごとの routing を追加できます。

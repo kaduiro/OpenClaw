@@ -8,6 +8,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "bootstrap:wsl": "bash scripts/bootstrap-wsl.sh --dry-run",
+    "doctor:wsl": "bash scripts/doctor-wsl.sh",
     "scaffold": "node src/cli/scaffold-workspace.mjs --workspace ./workspace",
     "validate:config": "node src/cli/validate-config.mjs --config ./config/openclaw.json5.example",
     "triage": "node src/cli/nightly-triage.mjs --workspace ./workspace",

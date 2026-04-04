@@ -60,8 +60,8 @@ export function loadRepoEnv(repoRoot, extraEnv = {}) {
   const envFile = path.join(repoRoot, ".env");
   return {
     ...loadDotEnvFile(exampleEnvFile),
-    ...loadDotEnvFile(envFile),
     ...process.env,
+    ...loadDotEnvFile(envFile),
     ...extraEnv,
   };
 }

@@ -4,14 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-normalize_bin() {
-  local value="$1"
-  if [[ "${value}" =~ ^[A-Za-z]:[\\/].* ]] && command -v wslpath >/dev/null 2>&1; then
-    wslpath -u "${value}"
-    return
-  fi
-  printf '%s' "${value}"
-}
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/wsl-runtime.sh"
+
+assert_wsl_linux_runtime "scripts/register-cron.sh"
 
 if [[ -f "${REPO_ROOT}/.env" ]]; then
   set -a
@@ -21,28 +17,29 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
 fi
 
 export OPENCLAW_REPO_ROOT="${OPENCLAW_REPO_ROOT:-${REPO_ROOT}}"
+export OPENCLAW_REPO_BIND_ROOT="${OPENCLAW_REPO_BIND_ROOT:-${OPENCLAW_REPO_ROOT}}"
 export OPENCLAW_WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-${REPO_ROOT}/workspace}"
 export OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-${REPO_ROOT}/config/openclaw.json5}"
 export OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-${HOME}/.openclaw-personal}"
 export OPENCLAW_TIMEZONE="${OPENCLAW_TIMEZONE:-Asia/Tokyo}"
 export NIGHTLY_TRIAGE_CRON="${NIGHTLY_TRIAGE_CRON:-0 23 * * *}"
 export MORNING_BRIEF_CRON="${MORNING_BRIEF_CRON:-0 7 * * *}"
-OPENCLAW_BIN="${OPENCLAW_BIN:-$(command -v openclaw || command -v openclaw.exe || true)}"
-NODE_BIN="${NODE_BIN:-$(command -v node || command -v node.exe || true)}"
-OPENCLAW_BIN="$(normalize_bin "${OPENCLAW_BIN}")"
-NODE_BIN="$(normalize_bin "${NODE_BIN}")"
 
-[[ -n "${OPENCLAW_BIN}" ]] || {
-  echo "openclaw CLI is required." >&2
-  exit 1
-}
+validate_posix_path "OPENCLAW_REPO_ROOT" "${OPENCLAW_REPO_ROOT}"
+validate_posix_path "OPENCLAW_REPO_BIND_ROOT" "${OPENCLAW_REPO_BIND_ROOT}"
+validate_posix_path "OPENCLAW_WORKSPACE_DIR" "${OPENCLAW_WORKSPACE_DIR}"
+validate_posix_path "OPENCLAW_CONFIG_PATH" "${OPENCLAW_CONFIG_PATH}"
+validate_posix_path "OPENCLAW_STATE_DIR" "${OPENCLAW_STATE_DIR}"
 
-[[ -n "${NODE_BIN}" ]] || {
-  echo "node is required." >&2
-  exit 1
-}
+OPENCLAW_BIN="$(resolve_command OPENCLAW_BIN openclaw)"
+NODE_BIN="$(resolve_command NODE_BIN node)"
 
-list_json="$(env OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" "${OPENCLAW_BIN}" cron list --json || true)"
+ensure_command "openclaw" "${OPENCLAW_BIN}" "openclaw CLI is required. In WSL, confirm \`command -v openclaw\` and \`openclaw --version\`."
+ensure_command "node" "${NODE_BIN}" "node is required. In WSL, confirm \`command -v node\`."
+
+bash "${REPO_ROOT}/scripts/doctor-wsl.sh"
+
+list_json="$(OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" "${OPENCLAW_BIN}" cron list --json || true)"
 
 get_job_id_by_name() {
   local name="$1"
@@ -58,7 +55,7 @@ upsert_job() {
   job_id="$(get_job_id_by_name "${job_name}")"
 
   if [[ -n "${job_id}" ]]; then
-    env OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" \
+    OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" \
       "${OPENCLAW_BIN}" cron edit "${job_id}" \
       --cron "${expr}" \
       --tz "${OPENCLAW_TIMEZONE}" \
@@ -67,7 +64,7 @@ upsert_job() {
       --light-context \
       --no-deliver
   else
-    env OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" \
+    OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH}" OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR}" \
       "${OPENCLAW_BIN}" cron add \
       --name "${job_name}" \
       --cron "${expr}" \

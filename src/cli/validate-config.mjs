@@ -2,6 +2,32 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadJson5Config, loadRepoEnv, parseCliArgs } from "../lib/env-config.mjs";
 
+function isAbsolutePosixPath(value) {
+  return typeof value === "string" && value.startsWith("/");
+}
+
+function isGitBashDrivePath(value) {
+  return typeof value === "string" && /^\/[A-Za-z](?:\/|$)/.test(value);
+}
+
+function parseDockerBindSource(bind) {
+  if (typeof bind !== "string" || bind.length === 0) {
+    return "";
+  }
+  if (bind.startsWith("/")) {
+    const secondColon = bind.indexOf(":", 1);
+    if (secondColon === -1) {
+      return bind;
+    }
+    return bind.slice(0, secondColon);
+  }
+  const firstColon = bind.indexOf(":");
+  if (firstColon === -1) {
+    return bind;
+  }
+  return bind.slice(0, firstColon);
+}
+
 export function validateOpenClawConfig(config) {
   const errors = [];
 
@@ -26,6 +52,9 @@ export function validateOpenClawConfig(config) {
   if (config?.gateway?.controlUi?.allowInsecureAuth === true) {
     errors.push("allowInsecureAuth must remain false");
   }
+  if (config?.agents?.defaults?.tools !== undefined) {
+    errors.push("agents.defaults.tools is not supported by the current OpenClaw schema");
+  }
   if (config?.tools?.elevated?.enabled === true) {
     errors.push("global elevated host exec must remain disabled");
   }
@@ -45,6 +74,13 @@ export function validateOpenClawConfig(config) {
   }
   if (config?.agents?.defaults?.sandbox?.backend !== "docker") {
     errors.push("agents.defaults.sandbox.backend must be docker");
+  }
+  const defaultBinds = config?.agents?.defaults?.sandbox?.docker?.binds ?? [];
+  for (const bind of defaultBinds) {
+    const source = parseDockerBindSource(bind);
+    if (!isAbsolutePosixPath(source) || isGitBashDrivePath(source)) {
+      errors.push(`agents.defaults.sandbox.docker.binds must use absolute POSIX source paths: ${bind}`);
+    }
   }
 
   return errors;
@@ -70,4 +106,3 @@ if (currentFile === executedFile) {
 
   console.log(`Config valid: ${configPath}`);
 }
-
