@@ -10,6 +10,16 @@ function isGitBashDrivePath(value) {
   return typeof value === "string" && /^\/[A-Za-z](?:\/|$)/.test(value);
 }
 
+function isPathInside(root, candidate) {
+  if (typeof root !== "string" || typeof candidate !== "string") {
+    return false;
+  }
+  if (root === candidate) {
+    return true;
+  }
+  return candidate.startsWith(`${root}/`);
+}
+
 function parseDockerBindSource(bind) {
   if (typeof bind !== "string" || bind.length === 0) {
     return "";
@@ -26,6 +36,22 @@ function parseDockerBindSource(bind) {
     return bind;
   }
   return bind.slice(0, firstColon);
+}
+
+function parseDockerBindTarget(bind) {
+  if (typeof bind !== "string" || bind.length === 0) {
+    return "";
+  }
+  const source = parseDockerBindSource(bind);
+  if (!source) {
+    return "";
+  }
+  const remainder = bind.slice(source.length + 1);
+  const targetEnd = remainder.indexOf(":");
+  if (targetEnd === -1) {
+    return remainder;
+  }
+  return remainder.slice(0, targetEnd);
 }
 
 export function validateOpenClawConfig(config) {
@@ -69,18 +95,37 @@ export function validateOpenClawConfig(config) {
   if (personalAgent?.tools?.elevated?.enabled === true) {
     errors.push("personal agent elevated host exec must remain disabled");
   }
+  if (!isAbsolutePosixPath(personalAgent?.workspace) || isGitBashDrivePath(personalAgent?.workspace)) {
+    errors.push("personal agent workspace must use an absolute POSIX path");
+  }
   if (config?.agents?.defaults?.sandbox?.mode !== "all") {
     errors.push("agents.defaults.sandbox.mode must be all");
   }
   if (config?.agents?.defaults?.sandbox?.backend !== "docker") {
     errors.push("agents.defaults.sandbox.backend must be docker");
   }
+  if (config?.agents?.defaults?.sandbox?.workspaceAccess !== "rw") {
+    errors.push("agents.defaults.sandbox.workspaceAccess must be rw");
+  }
   const defaultBinds = config?.agents?.defaults?.sandbox?.docker?.binds ?? [];
   for (const bind of defaultBinds) {
     const source = parseDockerBindSource(bind);
+    const target = parseDockerBindTarget(bind);
     if (!isAbsolutePosixPath(source) || isGitBashDrivePath(source)) {
       errors.push(`agents.defaults.sandbox.docker.binds must use absolute POSIX source paths: ${bind}`);
     }
+    if (target === "/workspace") {
+      errors.push(`agents.defaults.sandbox.docker.binds must not mount reserved workspace path: ${bind}`);
+    }
+    if (target === "/repo") {
+      errors.push(`agents.defaults.sandbox.docker.binds must not mount /repo in workspace-only mode: ${bind}`);
+    }
+    if (personalAgent?.workspace && !isPathInside(personalAgent.workspace, source)) {
+      errors.push(`agents.defaults.sandbox.docker.binds must stay within the personal workspace root: ${bind}`);
+    }
+  }
+  if (defaultBinds.length > 0) {
+    errors.push("agents.defaults.sandbox.docker.binds must be empty in workspace-only mode");
   }
 
   return errors;

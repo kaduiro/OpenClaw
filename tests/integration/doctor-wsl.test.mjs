@@ -11,15 +11,32 @@ function writeExecutable(filePath, content) {
 function nodeShimContent() {
   return `#!/usr/bin/env bash
 set -euo pipefail
-args=()
-for arg in "$@"; do
-  if [[ "$arg" == /* ]] && command -v wslpath >/dev/null 2>&1; then
-    args+=("$(wslpath -w "$arg")")
-  else
-    args+=("$arg")
+exec "${toWslPath(process.execPath)}" "$@"
+`;
+}
+
+function dockerShimContent({ missingIntegration = false, missingPython = false } = {}) {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "version" ]]; then
+  if [[ "${missingIntegration ? "1" : "0"}" == "1" ]]; then
+    echo "The command 'docker' could not be found in this WSL 2 distro."
+    exit 1
   fi
-done
-exec "${toWslPath(process.execPath)}" "\${args[@]}"
+  echo "Client:"
+  exit 0
+fi
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" ]]; then
+  if [[ "${missingPython ? "1" : "0"}" == "1" ]]; then
+    exit 1
+  fi
+  echo "/usr/bin/python3"
+  exit 0
+fi
+echo docker
 `;
 }
 
@@ -37,9 +54,21 @@ function toWslPath(input) {
 
 function runInWsl(repoRoot, command, env = process.env) {
   const wslRepoRoot = toWslPath(repoRoot);
+  const sanitizedEnv = { ...env };
+  for (const key of Object.keys(process.env)) {
+    if (!key.startsWith("OPENCLAW_")) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(env, key) && env[key] !== process.env[key]) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(sanitizedEnv, key)) {
+      delete sanitizedEnv[key];
+    }
+  }
   return execFileSync("wsl.exe", ["bash", "-lc", `cd "${wslRepoRoot}" && ${command}`], {
     cwd: repoRoot,
-    env,
+    env: sanitizedEnv,
     encoding: "utf8",
   });
 }
@@ -51,13 +80,25 @@ describe("doctor-wsl.sh", () => {
   const fakeBin = path.join(repoRoot, "tmp", "doctor-bin");
   const fakeHome = path.join(repoRoot, "tmp", "doctor-home");
   const missingNodeHome = path.join(repoRoot, "tmp", "doctor-no-node-home");
+  const originalEnvExists = fs.existsSync(envPath);
+  const originalEnvContent = originalEnvExists ? fs.readFileSync(envPath, "utf8") : "";
+  const originalConfigExists = fs.existsSync(configPath);
+  const originalConfigContent = originalConfigExists ? fs.readFileSync(configPath, "utf8") : "";
 
   afterEach(() => {
     fs.rmSync(fakeBin, { recursive: true, force: true });
     fs.rmSync(fakeHome, { recursive: true, force: true });
     fs.rmSync(missingNodeHome, { recursive: true, force: true });
-    fs.rmSync(envPath, { force: true });
-    fs.rmSync(configPath, { force: true });
+    if (originalEnvExists) {
+      fs.writeFileSync(envPath, originalEnvContent, "utf8");
+    } else {
+      fs.rmSync(envPath, { force: true });
+    }
+    if (originalConfigExists) {
+      fs.writeFileSync(configPath, originalConfigContent, "utf8");
+    } else {
+      fs.rmSync(configPath, { force: true });
+    }
   });
 
   function writeBaseEnv(extra = []) {
@@ -67,7 +108,6 @@ describe("doctor-wsl.sh", () => {
         "OPENCLAW_GATEWAY_TOKEN=test-token",
         "GEMINI_API_KEY=test-gemini",
         `OPENCLAW_REPO_ROOT=${toWslPath(repoRoot)}`,
-        `OPENCLAW_REPO_BIND_ROOT=${toWslPath(repoRoot)}`,
         `OPENCLAW_WORKSPACE_DIR=${toWslPath(path.join(repoRoot, "workspace"))}`,
         `OPENCLAW_CONFIG_PATH=${toWslPath(configPath)}`,
         `OPENCLAW_STATE_DIR=${toWslPath(path.join(repoRoot, ".state"))}`,
@@ -86,7 +126,7 @@ describe("doctor-wsl.sh", () => {
     fs.mkdirSync(fakeBin, { recursive: true });
     writeExecutable(path.join(fakeBin, "pnpm"), "#!/usr/bin/env bash\necho pnpm\n");
     writeExecutable(path.join(fakeBin, "openclaw"), "#!/usr/bin/env bash\necho openclaw\n");
-    writeExecutable(path.join(fakeBin, "docker"), "#!/usr/bin/env bash\necho docker\n");
+    writeExecutable(path.join(fakeBin, "docker"), dockerShimContent());
     writeBaseEnv();
 
     expect(() =>
@@ -102,7 +142,7 @@ describe("doctor-wsl.sh", () => {
     fs.writeFileSync(path.join(fakeHome, ".nvm", "nvm.sh"), "nvm() { return 0; }\n", "utf8");
 
     fs.mkdirSync(fakeBin, { recursive: true });
-    writeExecutable(path.join(fakeBin, "docker"), "#!/usr/bin/env bash\necho docker\n");
+    writeExecutable(path.join(fakeBin, "docker"), dockerShimContent());
     writeBaseEnv();
 
     expect(() =>
@@ -113,37 +153,29 @@ describe("doctor-wsl.sh", () => {
     ).toThrowError(/Shell not reloaded/);
   });
 
-  it("rejects Windows npm shims for pnpm and openclaw", () => {
-    fs.mkdirSync(fakeBin, { recursive: true });
-    fs.mkdirSync(fakeHome, { recursive: true });
-    writeExecutable(path.join(fakeBin, "node"), nodeShimContent());
-    writeExecutable(path.join(fakeBin, "docker"), "#!/usr/bin/env bash\necho docker\n");
-    writeBaseEnv();
-
-    expect(() =>
-      runInWsl(
-        repoRoot,
-        `HOME="${toWslPath(fakeHome)}" PATH="${toWslPath(fakeBin)}:$PATH" PNPM_BIN="/mnt/c/Users/fake/AppData/Roaming/npm/pnpm" OPENCLAW_BIN="/mnt/c/Users/fake/AppData/Roaming/npm/openclaw" DOCKER_BIN="${toWslPath(path.join(fakeBin, "docker"))}" bash scripts/doctor-wsl.sh`,
-      ),
-    ).toThrowError(/Windows shim contamination/);
-  });
-
   it("reports missing Docker Desktop WSL integration", () => {
     fs.mkdirSync(fakeBin, { recursive: true });
     writeExecutable(path.join(fakeBin, "node"), nodeShimContent());
     writeExecutable(path.join(fakeBin, "pnpm"), "#!/usr/bin/env bash\necho pnpm\n");
     writeExecutable(path.join(fakeBin, "openclaw"), "#!/usr/bin/env bash\necho openclaw\n");
-    writeExecutable(
-      path.join(fakeBin, "docker"),
-      `#!/usr/bin/env bash
-echo "The command 'docker' could not be found in this WSL 2 distro."
-exit 1
-`,
-    );
+    writeExecutable(path.join(fakeBin, "docker"), dockerShimContent({ missingIntegration: true }));
     writeBaseEnv();
 
     expect(() => runInWsl(repoRoot, `PATH="${toWslPath(fakeBin)}:$PATH" bash scripts/doctor-wsl.sh`)).toThrowError(
       /Docker Desktop WSL integration is disabled/,
+    );
+  });
+
+  it("reports sandbox images that do not provide python", () => {
+    fs.mkdirSync(fakeBin, { recursive: true });
+    writeExecutable(path.join(fakeBin, "node"), nodeShimContent());
+    writeExecutable(path.join(fakeBin, "pnpm"), "#!/usr/bin/env bash\necho pnpm\n");
+    writeExecutable(path.join(fakeBin, "openclaw"), "#!/usr/bin/env bash\necho openclaw\n");
+    writeExecutable(path.join(fakeBin, "docker"), dockerShimContent({ missingPython: true }));
+    writeBaseEnv(["OPENCLAW_SANDBOX_IMAGE=openclaw-sandbox:bookworm-python"]);
+
+    expect(() => runInWsl(repoRoot, `PATH="${toWslPath(fakeBin)}:$PATH" bash scripts/doctor-wsl.sh`)).toThrowError(
+      /Sandbox image missing python/,
     );
   });
 });

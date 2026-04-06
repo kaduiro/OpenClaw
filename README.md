@@ -138,7 +138,6 @@ cp .env.example .env
 - `OPENCLAW_GATEWAY_TOKEN`
 - `GEMINI_API_KEY`
 - `OPENCLAW_REPO_ROOT`
-- `OPENCLAW_REPO_BIND_ROOT`
 - `OPENCLAW_WORKSPACE_DIR`
 - `OPENCLAW_CONFIG_PATH`
 - `OPENCLAW_STATE_DIR`
@@ -153,8 +152,8 @@ GEMINI_API_KEY=あなたのGemini APIキー
 OPENCLAW_TIMEZONE=Asia/Tokyo
 OPENCLAW_MODEL_PRIMARY=google/gemini-2.5-flash
 OPENCLAW_MODEL_FALLBACK=google/gemini-2.5-pro
+OPENCLAW_SANDBOX_IMAGE=openclaw-sandbox:bookworm-python
 OPENCLAW_REPO_ROOT=/mnt/c/Users/akkun/kaduiro/Openclaw
-OPENCLAW_REPO_BIND_ROOT=/mnt/c/Users/akkun/kaduiro/Openclaw
 OPENCLAW_WORKSPACE_DIR=/mnt/c/Users/akkun/kaduiro/Openclaw/workspace
 OPENCLAW_STATE_DIR=$HOME/.openclaw-personal
 OPENCLAW_CONFIG_PATH=/mnt/c/Users/akkun/kaduiro/Openclaw/config/openclaw.json5
@@ -170,31 +169,40 @@ MORNING_BRIEF_CRON="0 7 * * *"
 cp config/openclaw.json5.example config/openclaw.json5
 ```
 
-### 9. workspace を生成または補完する
+### 9. Python 入り sandbox image を作成する
+
+```bash
+bash scripts/build-sandbox-image.sh
+```
+
+このリポジトリの標準 sandbox image は `openclaw-sandbox:bookworm-python` です。
+これは既存の `openclaw-sandbox:bookworm-slim` をベースに Python を追加した派生 image で、OpenClaw の mutation helper がファイル書き込み時に必要とします。
+
+### 10. workspace を生成または補完する
 
 ```bash
 node src/cli/scaffold-workspace.mjs --workspace ./workspace
 ```
 
-### 10. health check を実行する
+### 11. health check を実行する
 
 ```bash
 bash scripts/healthcheck.sh
 ```
 
-### 11. OpenClaw Gateway と Control UI を起動する
+### 12. OpenClaw Gateway と Control UI を起動する
 
 ```bash
 bash scripts/dev-start.sh
 ```
 
-### 12. cron ジョブを登録する
+### 13. cron ジョブを登録する
 
 ```bash
 bash scripts/register-cron.sh
 ```
 
-### 13. Control UI を確認する
+### 14. Control UI を確認する
 
 Control UI を開き、personal workspace にアクセスできることを確認します。
 
@@ -256,6 +264,152 @@ http://127.0.0.1:18789/openclaw
    node src/cli/nightly-triage.mjs --workspace ./workspace
    node src/cli/morning-brief.mjs --workspace ./workspace
    ```
+
+## Control UI 起動後にやること
+
+ここから先が、このリポジトリを AI 秘書として成立させる本体です。
+起動できたら終わりではなく、workspace に材料を置き、OpenClaw に保存先付きで成果物を作らせ、夜と朝の deterministic job に整理を任せる運用に切り替えます。
+
+実際の運用設計は `docs/ai-secretary-operations.md` にまとめています。
+Control UI 起動後に、何をどこへ置き、どう依頼し、どう nightly triage / morning brief につなぐかはそちらを参照してください。
+
+### 現時点で自動化されるもの
+
+- `workspace/inbox/raw/` の未整理メモの triage
+- daily memory 候補の抽出
+- `workspace/tasks/next-actions.md` への next actions 追記
+- 朝の brief 生成
+
+### 現時点では自動化されていないもの
+
+- project brief を定期的に再読して、技術調査ノートを自律的に更新する専用 cron
+- リポジトリ横断の継続調査ログの自動追記
+- research 専用 skill による夜間の新規調査バッチ
+
+つまり、今の実装は「AI 秘書の運用基盤」であり、離席中に自動で回るのはまず整理と要約です。
+技術調査そのものは、Control UI から依頼して成果物を Markdown に残す運用で成立させます。
+
+## AI 秘書として運用する最短手順
+
+Control UI が開ける状態から、実際に運用へ入る手順は次です。
+
+### 1. workspace の役割を埋める
+
+最低限、次のファイルをあなたの運用に合わせて更新します。
+
+- `workspace/AGENTS.md`
+  この workspace を AI 秘書としてどう使うかを書く
+- `workspace/SOUL.md`
+  調査結果の出し方、リスクの扱い方、禁止事項を書く
+- `workspace/USER.md`
+  出力言語、要約スタイル、好みのフォーマットを書く
+- `workspace/TOOLS.md`
+  sandbox-first と host exec 制約を書く
+- `workspace/MEMORY.md`
+  daily memory と output の入口として使う
+
+### 2. プロジェクトの材料を入れる
+
+長く残す情報は `workspace/docs/projects/` に置きます。
+最低限、各プロジェクトごとに 1 つ正本を作ります。
+
+推奨ファイル:
+
+```text
+workspace/docs/projects/<project-name>.md
+```
+
+このファイルは「長く残す知識 + current brief」の統合文書として扱います。
+
+最低限入れる内容:
+
+- プロジェクト名
+- 目的
+- 関連 repo / 関連サービス
+- 制約
+- 調べてほしい論点
+- いま困っていること
+
+整理前のメモ、会議メモ、Slack 抜粋、気づきは `workspace/inbox/raw/` に置きます。
+
+実案件例:
+
+```text
+workspace/docs/projects/ogawa-kogyo-hp.md
+workspace/docs/projects/ogawa-kogyo-hp-pre-research.md
+```
+
+### 3. Control UI で保存先付きの依頼を出す
+
+OpenClaw には「何を作るか」だけでなく「どこに保存するか」まで毎回明示します。
+
+例 1: `ogawa-kogyo-hp` の現状要約
+
+```text
+docs/projects/ogawa-kogyo-hp.md を読んで、
+プロジェクトの目的、主要コンポーネント、制約、未解決論点を要約してください。
+結果は docs/projects/ogawa-kogyo-hp-summary.md に保存してください。
+```
+
+例 2: `ogawa-kogyo-hp` の実装前事前調査
+
+```text
+docs/projects/ogawa-kogyo-hp.md を使って事前調査ノートを作成してください。
+目的、想定アーキテクチャ、技術的リスク、最初に読むべきコード、未解決論点、次アクションを整理し、
+docs/projects/ogawa-kogyo-hp-pre-research.md に保存してください。
+inbox/raw/ に関連メモがあれば参照してください。
+```
+
+例 3: `ogawa-kogyo-hp` の生メモから next actions 抽出
+
+```text
+inbox/raw/ の ogawa-kogyo-hp 関連メモを読み、
+daily memory に残す候補と、tasks/next-actions.md に入れるべき項目を整理してください。
+必要な内容は inbox/raw/ に追記せず、既存の deterministic job で扱う前提で助言してください。
+```
+
+### 4. 出力先のルールを固定する
+
+- 再利用する知識: `workspace/docs/projects/`
+- まだ未整理のメモ: `workspace/inbox/raw/`
+- 確定したアクション: `workspace/tasks/next-actions.md`
+- 日々の学び: `workspace/memory/daily/YYYY-MM-DD.md`
+
+### 5. cron で整理を自動化する
+
+次を実行して nightly triage と morning brief を有効化します。
+
+```bash
+bash scripts/register-cron.sh
+```
+
+これで離席中に次が自動で進みます。
+
+- raw inbox の整理
+- memory 候補の抽出
+- next actions の更新
+- 朝の brief の生成
+
+### 6. 日次運用を固定する
+
+朝:
+
+- `outputs/morning-briefs/YYYY-MM-DD.md` を読む
+- `tasks/next-actions.md` を確認する
+- 当日やることを決める
+
+日中:
+
+- brief を `workspace/docs/projects/` に更新する
+- メモを `workspace/inbox/raw/` に放り込む
+- Control UI で調査と要約を走らせる
+
+夜:
+
+- nightly triage が raw inbox を整理する
+- daily memory と next actions が更新される
+
+この循環が回れば、あなたが作業していない間も整理と要約は進み続けます。
 
 ## Workspace 構成
 
@@ -335,7 +489,7 @@ node src/cli/morning-brief.mjs --workspace ./workspace
 
 ### 1. 元資料を用意する
 
-`workspace/docs/projects/` に project brief を作成または更新します。
+`workspace/docs/projects/` に案件の正本を作成または更新します。
 推奨ファイル名:
 
 ```text
@@ -365,10 +519,10 @@ bash scripts/dev-start.sh
 推奨プロンプト:
 
 ```text
-workspace/docs/projects/<project-name>.md の project brief を使って事前調査ノートを作成してください。
+docs/projects/<project-name>.md の正本を使って事前調査ノートを作成してください。
 プロジェクトの目的、想定されるアーキテクチャ、既知のリスク、未解決の論点、直近の next actions を要約してください。
-結果は workspace/docs/projects/<project-name>-pre-research.md に保存してください。
-workspace/inbox/raw/ に関連メモがあれば、あわせて確認対象に含めてください。
+結果は docs/projects/<project-name>-pre-research.md に保存してください。
+inbox/raw/ に関連メモがあれば、あわせて確認対象に含めてください。
 ```
 
 ### 4. 出力をレビューする
@@ -412,12 +566,14 @@ workspace/docs/projects/<project-name>-pre-research.md
 - `controlUi.enabled: true`
 - `dangerouslyDisableDeviceAuth: false`
 - Docker sandbox を有効化
-- repo root を `OPENCLAW_REPO_BIND_ROOT` 経由で sandbox 内の `/repo` にマウント
+- workspace mount は OpenClaw 標準の `workspaceAccess: "rw"` に委ねる
 - workspace skill は `workspace/skills` から読み込む
+- sandbox image は `OPENCLAW_SANDBOX_IMAGE` で切り替え、通常運用では Python を含む tag を使う
 
 Gemini モデルは環境変数で設定し、`google/gemini-2.5-flash` のような provider ref を使います。
+Google provider が `429` を返した場合は、一時的な retry だけでなく quota / billing 超過も疑ってください。`flash -> pro` の fallback でも同じ provider quota を共有する前提なので、再起動だけでは解消しません。
 
-WSL 標準運用では、`OPENCLAW_REPO_ROOT` と `OPENCLAW_REPO_BIND_ROOT` はどちらも `/mnt/c/...` のような POSIX 絶対パスに揃えます。
+WSL 標準運用では、`OPENCLAW_REPO_ROOT`、`OPENCLAW_WORKSPACE_DIR`、`OPENCLAW_CONFIG_PATH` を `/mnt/c/...` のような POSIX 絶対パスに揃えます。
 Windows ネイティブ path と Git Bash path を混在させるのは標準手順に含めません。
 
 ## Safe Exec 方針
@@ -487,6 +643,7 @@ pnpm test:e2e
 
 関連ドキュメント:
 
+- `docs/ai-secretary-product-overview.md`: AI秘書プロダクトの紹介と展望
 - `docs/operations.md`: 日常運用手順
 - `docs/architecture.md`: システム構成
 - `docs/use-cases.md`: 開発者向けの具体的な利用例
@@ -495,11 +652,16 @@ pnpm test:e2e
 
 - `openclaw` が見つからない場合は、まず `bash scripts/bootstrap-wsl.sh --dry-run` と `bash scripts/doctor-wsl.sh` を実行し、WSL 内の CLI 導入手順に従ってください。
 - `docker` が WSL から見えない場合は、Docker Desktop の WSL integration を有効化し、WSL 側で `docker version` が通ることを確認してください。
+- configured sandbox image に `python3` または `python` が無いと、OpenClaw の mutation helper が書き込み時に失敗します。`bash scripts/healthcheck.sh` と `bash scripts/doctor-wsl.sh` はこの不足を事前に検出するので、`OPENCLAW_SANDBOX_IMAGE` を Python を含む tag に変更してください。
+- `openclaw-sandbox:bookworm-python` がローカルに無い場合は、`bash scripts/build-sandbox-image.sh` を実行してください。この repo の標準運用は `bookworm-slim` ではなく `bookworm-python` 前提です。
 - `pnpm` や `openclaw` が `/mnt/c/Users/.../AppData/Roaming/npm/` を指している場合は、Windows 側 npm shim を拾っています。`bash scripts/bootstrap-wsl.sh --yes` を実行し、必要なら `source ~/.bashrc` で profile guard を反映してください。
 - `wsl` 起動時に `.wslconfig` の unknown key 警告が出る場合は `bash scripts/doctor-wsl.sh` を実行し、修正例に従って `.wslconfig` を直してください。
 - `nvm` 導入後なのに `node -v` が通らない場合は、`bash scripts/doctor-wsl.sh` を実行してください。doctor は「未導入」ではなく「shell 未再読み込み」を区別して案内します。
 - `bootstrap-wsl.sh --yes` を再実行しても毎回 `Install Node.js LTS` や `Install OpenClaw CLI in WSL` が出る場合は、interactive shell の PATH か profile guard が壊れています。`bash scripts/doctor-wsl.sh` を実行して分類済みメッセージを確認してください。
 - `.env` に `C:/...` や `/c/...` を入れている場合は、WSL 標準手順に合わせて `/mnt/c/...` へ修正してください。
-- `bash scripts/healthcheck.sh` で bind path エラーが出る場合は、`OPENCLAW_REPO_BIND_ROOT` と `OPENCLAW_REPO_ROOT` が WSL 側 POSIX 絶対パスになっているか確認してください。
+- `bash scripts/healthcheck.sh` で sandbox bind エラーが出る場合は、custom `docker.binds` を追加して `/workspace` や `/repo` を mount していないか確認してください。
+- Control UI の prompt で `workspace/docs/...` のような path を使うと `/workspace/workspace/...` と解釈されることがあります。prompt では `docs/projects/...`、`inbox/raw/...`、`tasks/next-actions.md` のように workspace 相対パスを使ってください。
+- Gemini provider が `429` を返した場合は、単なる瞬間的 rate limit ではなく quota / billing 超過の可能性があります。Google AI Studio 側の利用枠、請求設定、同じ API key を使う他プロセスの消費量を確認してください。OpenClaw の再起動だけでは直りません。
+- `openclaw-sandbox:bookworm-slim` しか無い状態では通常運用に進みません。Python 不足で agent の書き込みが失敗するため、`bookworm-python` を build してから起動してください。
 - cron ジョブを手動で変更した場合は `bash scripts/register-cron.sh` を再実行してください。
 - workspace のファイルが欠けている場合は `node src/cli/scaffold-workspace.mjs --workspace ./workspace` を再実行してください。

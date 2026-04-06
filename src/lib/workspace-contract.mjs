@@ -30,6 +30,7 @@ Do not build a separate chat system or replacement UI.
 - Prefer deterministic workspace tooling over free-form automation when scheduled jobs exist.
 - Keep channel-specific assumptions out of the workspace so future plugins can be added cleanly.
 - Preserve Markdown readability for direct use in Obsidian.
+- In Control UI prompts, refer to workspace files by workspace-relative paths such as \`docs/projects/foo.md\` rather than \`workspace/docs/projects/foo.md\`.
 `,
   "SOUL.md": `# SOUL
 
@@ -81,14 +82,13 @@ Use this skill for the scheduled nightly triage run.
 ## Workflow
 
 1. Confirm the workspace is the active OpenClaw personal workspace.
-2. Execute the deterministic CLI inside the sandbox:
-   \`node /repo/src/cli/nightly-triage.mjs --workspace /workspace\`
-3. Do not improvise alternate output formats.
-4. Verify that:
-   - \`memory/daily/YYYY-MM-DD.md\` was updated
-   - \`tasks/next-actions.md\` was updated when actions were found
-   - \`outputs/triage-logs/YYYY-MM-DD.md\` exists
-5. If the command fails, report the failure and stop.
+2. Review \`inbox/raw/\` and identify memory candidates, open questions, and actionable next steps.
+3. Update only workspace files:
+   - \`memory/daily/YYYY-MM-DD.md\`
+   - \`tasks/next-actions.md\`
+   - \`outputs/triage-logs/YYYY-MM-DD.md\`
+4. Do not read or write outside the workspace.
+5. If the task requires repo-root access or host execution, stop and escalate instead of bypassing the sandbox.
 `,
   "skills/morning-brief/SKILL.md": `# morning-brief
 
@@ -96,11 +96,10 @@ Use this skill for the scheduled morning brief run.
 
 ## Workflow
 
-1. Run the deterministic CLI inside the sandbox:
-   \`node /repo/src/cli/morning-brief.mjs --workspace /workspace\`
-2. Do not invent extra summary sections.
-3. Verify that \`outputs/morning-briefs/YYYY-MM-DD.md\` exists.
-4. If the command fails, report the failure and stop.
+1. Review the latest daily memory and \`tasks/next-actions.md\`.
+2. Write \`outputs/morning-briefs/YYYY-MM-DD.md\` using a short, consistent morning brief structure.
+3. Do not read or write outside the workspace.
+4. If the task requires repo-root access or host execution, stop and escalate instead of bypassing the sandbox.
 `,
   "skills/safe-exec/SKILL.md": `# safe-exec
 
@@ -110,9 +109,8 @@ This skill exists for break-glass host execution planning only.
 
 - Do not use raw elevated exec.
 - Do not construct ad-hoc host shell commands.
-- Only use \`bash /repo/scripts/safe-host-exec.sh <command-id>\` when an operator has explicitly approved the action.
-- Allowed command ids are defined in \`/repo/config/exec-allowlist.json\`.
-- If the required action is not allowlisted, stop and ask for operator intervention instead of bypassing the policy.
+- Normal workspace agents must not invoke host-side wrappers from inside the sandbox.
+- If a task genuinely requires host execution, stop and hand it off to an operator-run flow outside the workspace agent.
 `,
 };
 
@@ -144,4 +142,3 @@ export function verifyWorkspace(workspaceRoot) {
     missingFiles,
   };
 }
-

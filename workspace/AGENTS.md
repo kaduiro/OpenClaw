@@ -12,4 +12,4 @@ Do not build a separate chat system or replacement UI.
 - Prefer deterministic workspace tooling over free-form automation when scheduled jobs exist.
 - Keep channel-specific assumptions out of the workspace so future plugins can be added cleanly.
 - Preserve Markdown readability for direct use in Obsidian.
-
+- In Control UI prompts, refer to workspace files by workspace-relative paths such as `docs/projects/foo.md` rather than `workspace/docs/projects/foo.md`.

@@ -23,6 +23,24 @@ exec "${toWslPath(process.execPath)}" "\${args[@]}"
 `;
 }
 
+function dockerShimContent() {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "version" ]]; then
+  echo "Client:"
+  exit 0
+fi
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" ]]; then
+  echo "/usr/bin/python3"
+  exit 0
+fi
+echo docker
+`;
+}
+
 function toPosix(input) {
   return input.replace(/\\/g, "/");
 }
@@ -63,7 +81,7 @@ describe("register-cron.sh", () => {
     const wslFakeBin = toWslPath(fakeBin);
     writeExecutable(path.join(fakeBin, "node"), nodeShimContent());
     writeExecutable(path.join(fakeBin, "pnpm"), "#!/usr/bin/env bash\necho pnpm\n");
-    writeExecutable(path.join(fakeBin, "docker"), "#!/usr/bin/env bash\necho docker\n");
+    writeExecutable(path.join(fakeBin, "docker"), dockerShimContent());
     writeExecutable(
       path.join(fakeBin, "openclaw"),
       `#!/usr/bin/env bash
@@ -81,10 +99,10 @@ echo "$@" >> "${captureFileRelative}"
         "OPENCLAW_GATEWAY_TOKEN=test-token",
         "GEMINI_API_KEY=test-gemini",
         `OPENCLAW_REPO_ROOT=${toWslPath(repoRoot)}`,
-        `OPENCLAW_REPO_BIND_ROOT=${toWslPath(repoRoot)}`,
         `OPENCLAW_WORKSPACE_DIR=${toWslPath(path.join(repoRoot, "workspace"))}`,
         `OPENCLAW_CONFIG_PATH=${toWslPath(path.join(repoRoot, "config", "openclaw.json5"))}`,
         `OPENCLAW_STATE_DIR=${toWslPath(path.join(repoRoot, ".state"))}`,
+        "OPENCLAW_SANDBOX_IMAGE=openclaw-sandbox:bookworm-python",
         "OPENCLAW_TIMEZONE=Asia/Tokyo",
         "PNPM_BIN=pnpm",
       ].join("\n"),

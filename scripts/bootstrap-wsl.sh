@@ -14,6 +14,7 @@ assert_ubuntu_runtime "scripts/bootstrap-wsl.sh"
 DRY_RUN=0
 ASSUME_YES=0
 FORCE_ALL="${BOOTSTRAP_FORCE_ALL:-0}"
+OPENCLAW_SANDBOX_IMAGE="${OPENCLAW_SANDBOX_IMAGE:-openclaw-sandbox:bookworm-python}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -105,6 +106,12 @@ fi
 docker_output="$(docker version 2>&1 || true)"
 if [[ "${docker_output}" == *"could not be found in this WSL 2 distro"* ]] || [[ "${docker_output}" == *"command 'docker' could not be found in this WSL 2 distro"* ]] || [[ -z "$(command -v docker 2>/dev/null || true)" ]]; then
   append_step "Enable Docker Desktop WSL integration" "Open Docker Desktop > Settings > Resources > WSL Integration, enable Ubuntu, then rerun docker version"
+fi
+
+if command -v docker >/dev/null 2>&1 && [[ "${docker_output}" != *"could not be found in this WSL 2 distro"* ]] && [[ "${docker_output}" != *"command 'docker' could not be found in this WSL 2 distro"* ]] && [[ "${docker_output}" != *"Cannot connect to the Docker daemon"* ]]; then
+  if ! docker image inspect "${OPENCLAW_SANDBOX_IMAGE}" >/dev/null 2>&1; then
+    append_step "Build Python-enabled sandbox image" "bash scripts/build-sandbox-image.sh"
+  fi
 fi
 
 if [[ ! -f "${REPO_ROOT}/.env" ]]; then
@@ -205,6 +212,9 @@ for index in "${!planned_commands[@]}"; do
         "openclaw is still unavailable after npm global install." \
         "The WSL-native CLI was not activated, so startup scripts would still resolve the unsupported Windows shim." \
         "Run:\n  export NVM_DIR=\"${NVM_DIR}\"\n  . \"${NVM_DIR}/nvm.sh\"\n  npm install -g openclaw"
+      ;;
+    "Build Python-enabled sandbox image")
+      bash "${REPO_ROOT}/scripts/build-sandbox-image.sh"
       ;;
     *)
       eval "${planned_commands[index]}"

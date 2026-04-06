@@ -12,9 +12,9 @@ describe("validateOpenClawConfig", () => {
       },
       agents: {
         defaults: {
-          sandbox: { mode: "all", backend: "docker", docker: { binds: ["/repo-root:/repo:rw"] } },
+          sandbox: { mode: "all", backend: "docker", workspaceAccess: "rw", docker: {} },
         },
-        list: [{ id: "personal", tools: { elevated: { enabled: false } } }],
+        list: [{ id: "personal", workspace: "/workspace-root", tools: { elevated: { enabled: false } } }],
       },
     });
 
@@ -34,10 +34,10 @@ describe("validateOpenClawConfig", () => {
       },
       agents: {
         defaults: {
-          sandbox: { mode: "off", backend: "openshell", docker: { binds: ["C:/repo:/repo:rw"] } },
+          sandbox: { mode: "off", backend: "openshell", workspaceAccess: "ro", docker: { binds: ["C:/repo:/repo:rw"] } },
           tools: { profile: "coding" },
         },
-        list: [{ id: "personal", tools: { elevated: { enabled: true } } }],
+        list: [{ id: "personal", workspace: "/workspace-root", tools: { elevated: { enabled: true } } }],
       },
       commands: {
         bash: true,
@@ -50,7 +50,7 @@ describe("validateOpenClawConfig", () => {
     expect(errors).toContain("agents.defaults.tools is not supported by the current OpenClaw schema");
   });
 
-  it("rejects Git Bash style bind roots", () => {
+  it("rejects Git Bash style bind roots and reserved /workspace mounts", () => {
     const errors = validateOpenClawConfig({
       gateway: {
         mode: "local",
@@ -60,12 +60,35 @@ describe("validateOpenClawConfig", () => {
       },
       agents: {
         defaults: {
-          sandbox: { mode: "all", backend: "docker", docker: { binds: ["/c/repo:/repo:rw"] } },
+          sandbox: { mode: "all", backend: "docker", workspaceAccess: "rw", docker: { binds: ["/c/repo:/workspace:rw"] } },
         },
-        list: [{ id: "personal", tools: { elevated: { enabled: false } } }],
+        list: [{ id: "personal", workspace: "/workspace-root", tools: { elevated: { enabled: false } } }],
       },
     });
 
-    expect(errors).toContain("agents.defaults.sandbox.docker.binds must use absolute POSIX source paths: /c/repo:/repo:rw");
+    expect(errors).toContain("agents.defaults.sandbox.docker.binds must use absolute POSIX source paths: /c/repo:/workspace:rw");
+    expect(errors).toContain("agents.defaults.sandbox.docker.binds must not mount reserved workspace path: /c/repo:/workspace:rw");
+    expect(errors).toContain("agents.defaults.sandbox.docker.binds must be empty in workspace-only mode");
+  });
+
+  it("rejects /repo mounts and binds outside the workspace root", () => {
+    const errors = validateOpenClawConfig({
+      gateway: {
+        mode: "local",
+        bind: "loopback",
+        auth: { mode: "token", token: "abc" },
+        controlUi: { enabled: true, allowInsecureAuth: false, dangerouslyDisableDeviceAuth: false },
+      },
+      agents: {
+        defaults: {
+          sandbox: { mode: "all", backend: "docker", workspaceAccess: "rw", docker: { binds: ["/outside-root:/repo:rw"] } },
+        },
+        list: [{ id: "personal", workspace: "/workspace-root", tools: { elevated: { enabled: false } } }],
+      },
+    });
+
+    expect(errors).toContain("agents.defaults.sandbox.docker.binds must not mount /repo in workspace-only mode: /outside-root:/repo:rw");
+    expect(errors).toContain("agents.defaults.sandbox.docker.binds must stay within the personal workspace root: /outside-root:/repo:rw");
+    expect(errors).toContain("agents.defaults.sandbox.docker.binds must be empty in workspace-only mode");
   });
 });

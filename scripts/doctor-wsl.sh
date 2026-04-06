@@ -19,24 +19,15 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
 fi
 
 export OPENCLAW_REPO_ROOT="${OPENCLAW_REPO_ROOT:-${REPO_ROOT}}"
-export OPENCLAW_REPO_BIND_ROOT="${OPENCLAW_REPO_BIND_ROOT:-${OPENCLAW_REPO_ROOT}}"
 export OPENCLAW_WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-${REPO_ROOT}/workspace}"
 export OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-${REPO_ROOT}/config/openclaw.json5}"
 export OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-${HOME}/.openclaw-personal}"
+export OPENCLAW_SANDBOX_IMAGE="${OPENCLAW_SANDBOX_IMAGE:-openclaw-sandbox:bookworm-python}"
 
 validate_mnt_path "OPENCLAW_REPO_ROOT" "${OPENCLAW_REPO_ROOT}"
-validate_mnt_path "OPENCLAW_REPO_BIND_ROOT" "${OPENCLAW_REPO_BIND_ROOT}"
 validate_mnt_path "OPENCLAW_WORKSPACE_DIR" "${OPENCLAW_WORKSPACE_DIR}"
 validate_mnt_path "OPENCLAW_CONFIG_PATH" "${OPENCLAW_CONFIG_PATH}"
 validate_posix_path "OPENCLAW_STATE_DIR" "${OPENCLAW_STATE_DIR}"
-
-if [[ "${OPENCLAW_REPO_ROOT}" != "${OPENCLAW_REPO_BIND_ROOT}" ]]; then
-  diagnose_issue \
-    "Repo root mismatch" \
-    "OPENCLAW_REPO_ROOT=${OPENCLAW_REPO_ROOT} and OPENCLAW_REPO_BIND_ROOT=${OPENCLAW_REPO_BIND_ROOT}" \
-    "This repo standardizes on a single /mnt/... path for both host access and Docker bind source so sandbox mounts stay predictable." \
-    "Set both values to the same /mnt/<drive>/... path in .env."
-fi
 
 NODE_BIN="$(resolve_command NODE_BIN node)"
 PNPM_BIN="$(resolve_command PNPM_BIN pnpm)"
@@ -89,6 +80,10 @@ if [[ "${docker_output}" == *"Cannot connect to the Docker daemon"* ]]; then
     "docker is installed but cannot connect to the daemon." \
     "OpenClaw sandboxing requires a running Docker daemon reachable from WSL." \
     "Start Docker Desktop on Windows, wait for it to finish booting, then rerun \`docker version\`."
+fi
+
+if [[ -f "${OPENCLAW_CONFIG_PATH}" ]]; then
+  ensure_sandbox_image_has_python "${NODE_BIN}" "${DOCKER_BIN}" "${OPENCLAW_REPO_ROOT}" "${OPENCLAW_CONFIG_PATH}"
 fi
 
 windows_profile_wsl_path="$(get_windows_userprofile_wsl_path)"

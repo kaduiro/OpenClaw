@@ -43,9 +43,8 @@
         scope: "agent",
         workspaceAccess: "rw",
         docker: {
-          image: "openclaw-sandbox:bookworm-slim",
+          image: "${OPENCLAW_SANDBOX_IMAGE}",
           workdir: "/workspace",
-          binds: ["${OPENCLAW_REPO_BIND_ROOT}:/repo:rw"],
         },
       },
     },

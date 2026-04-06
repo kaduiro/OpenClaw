@@ -11,15 +11,25 @@ function writeExecutable(filePath, content) {
 function nodeShimContent() {
   return `#!/usr/bin/env bash
 set -euo pipefail
-args=()
-for arg in "$@"; do
-  if [[ "$arg" == /* ]] && command -v wslpath >/dev/null 2>&1; then
-    args+=("$(wslpath -w "$arg")")
-  else
-    args+=("$arg")
-  fi
-done
-exec "${toWslPath(process.execPath)}" "\${args[@]}"
+exec "${toWslPath(process.execPath)}" "$@"
+`;
+}
+
+function dockerShimContent() {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "version" ]]; then
+  echo "Client:"
+  exit 0
+fi
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+  exit 0
+fi
+if [[ "$1" == "run" ]]; then
+  echo "/usr/bin/python3"
+  exit 0
+fi
+echo docker
 `;
 }
 
@@ -37,9 +47,21 @@ function toWslPath(input) {
 
 function runInWsl(repoRoot, command, env = process.env) {
   const wslRepoRoot = toWslPath(repoRoot);
+  const sanitizedEnv = { ...env };
+  for (const key of Object.keys(process.env)) {
+    if (!key.startsWith("OPENCLAW_")) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(env, key) && env[key] !== process.env[key]) {
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(sanitizedEnv, key)) {
+      delete sanitizedEnv[key];
+    }
+  }
   return execFileSync("wsl.exe", ["bash", "-lc", `cd "${wslRepoRoot}" && ${command}`], {
     cwd: repoRoot,
-    env,
+    env: sanitizedEnv,
     encoding: "utf8",
   });
 }
@@ -49,19 +71,33 @@ describe("README setup flow", () => {
   const envPath = path.join(repoRoot, ".env");
   const configPath = path.join(repoRoot, "config", "openclaw.json5");
   const fakeBin = path.join(repoRoot, "tmp", "readme-bin");
+  const originalEnvExists = fs.existsSync(envPath);
+  const originalEnvContent = originalEnvExists ? fs.readFileSync(envPath, "utf8") : "";
+  const originalConfigExists = fs.existsSync(configPath);
+  const originalConfigContent = originalConfigExists ? fs.readFileSync(configPath, "utf8") : "";
 
   afterEach(() => {
     fs.rmSync(fakeBin, { recursive: true, force: true });
-    fs.rmSync(envPath, { force: true });
-    fs.rmSync(configPath, { force: true });
+    if (originalEnvExists) {
+      fs.writeFileSync(envPath, originalEnvContent, "utf8");
+    } else {
+      fs.rmSync(envPath, { force: true });
+    }
+    if (originalConfigExists) {
+      fs.writeFileSync(configPath, originalConfigContent, "utf8");
+    } else {
+      fs.rmSync(configPath, { force: true });
+    }
   });
 
-  it("supports the documented local bootstrap commands", () => {
+  it(
+    "supports the documented local bootstrap commands",
+    () => {
     fs.mkdirSync(fakeBin, { recursive: true });
     writeExecutable(path.join(fakeBin, "node"), nodeShimContent());
     writeExecutable(path.join(fakeBin, "pnpm"), "#!/usr/bin/env bash\necho pnpm\n");
     writeExecutable(path.join(fakeBin, "openclaw"), "#!/usr/bin/env bash\necho openclaw\n");
-    writeExecutable(path.join(fakeBin, "docker"), "#!/usr/bin/env bash\necho docker\n");
+    writeExecutable(path.join(fakeBin, "docker"), dockerShimContent());
     const wslFakeBin = toWslPath(fakeBin);
 
     fs.writeFileSync(
@@ -70,10 +106,10 @@ describe("README setup flow", () => {
         "OPENCLAW_GATEWAY_TOKEN=test-token",
         "GEMINI_API_KEY=test-gemini",
         `OPENCLAW_REPO_ROOT=${toWslPath(repoRoot)}`,
-        `OPENCLAW_REPO_BIND_ROOT=${toWslPath(repoRoot)}`,
         `OPENCLAW_WORKSPACE_DIR=${toWslPath(path.join(repoRoot, "workspace"))}`,
         `OPENCLAW_CONFIG_PATH=${toWslPath(configPath)}`,
         `OPENCLAW_STATE_DIR=${toWslPath(path.join(repoRoot, ".state"))}`,
+        "OPENCLAW_SANDBOX_IMAGE=openclaw-sandbox:bookworm-python",
         "OPENCLAW_MODEL_PRIMARY=google/gemini-2.5-flash",
         "OPENCLAW_MODEL_FALLBACK=google/gemini-2.5-pro",
         "OPENCLAW_TIMEZONE=Asia/Tokyo",
@@ -85,14 +121,14 @@ describe("README setup flow", () => {
 
     const bootstrap = runInWsl(repoRoot, `PATH="${wslFakeBin}:$PATH" bash scripts/bootstrap-wsl.sh --dry-run`);
     const doctor = runInWsl(repoRoot, `PATH="${wslFakeBin}:$PATH" bash scripts/doctor-wsl.sh`);
-    const scaffold = execFileSync("node", ["src/cli/scaffold-workspace.mjs", "--workspace", "./workspace"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-    const validate = execFileSync("node", ["src/cli/validate-config.mjs", "--config", "./config/openclaw.json5"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
+    const scaffold = runInWsl(
+      repoRoot,
+      `PATH="${wslFakeBin}:$PATH" node src/cli/scaffold-workspace.mjs --workspace ./workspace`,
+    );
+    const validate = runInWsl(
+      repoRoot,
+      `PATH="${wslFakeBin}:$PATH" node src/cli/validate-config.mjs --config ./config/openclaw.json5`,
+    );
     const healthcheck = runInWsl(repoRoot, `PATH="${wslFakeBin}:$PATH" bash scripts/healthcheck.sh`);
 
     expect(bootstrap).toContain("WSL bootstrap mode: dry-run");
@@ -100,5 +136,7 @@ describe("README setup flow", () => {
     expect(scaffold).toContain("Workspace scaffolded");
     expect(validate).toContain("Config valid");
     expect(healthcheck).toContain("Healthcheck passed.");
-  });
+    },
+    15000,
+  );
 });

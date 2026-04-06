@@ -22,7 +22,6 @@ describe("config loading", () => {
       OPENCLAW_MODEL_PRIMARY: "google/gemini-2.5-flash",
       OPENCLAW_MODEL_FALLBACK: "google/gemini-2.5-pro",
       OPENCLAW_REPO_ROOT: toWslPath(repoRoot),
-      OPENCLAW_REPO_BIND_ROOT: toWslPath(repoRoot),
       OPENCLAW_WORKSPACE_DIR: toWslPath(path.join(repoRoot, "workspace")),
     };
 
@@ -31,7 +30,9 @@ describe("config loading", () => {
     expect(config.gateway.bind).toBe("loopback");
     expect(config.gateway.auth.mode).toBe("token");
     expect(config.agents.list[0].id).toBe("personal");
-    expect(config.agents.defaults.sandbox.docker.binds[0]).toContain(":/repo:rw");
+    expect(config.agents.defaults.sandbox.docker.binds ?? []).toEqual([]);
+    expect(config.agents.defaults.sandbox.docker.image).toBe("openclaw-sandbox:bookworm-python");
+    expect(config.agents.defaults.sandbox.workspaceAccess).toBe("rw");
     expect(config.skills.load.extraDirs[0]).toContain("workspace/skills");
     expect(fs.existsSync(path.join(repoRoot, "config", "openclaw.json5.example"))).toBe(true);
   });
@@ -40,28 +41,28 @@ describe("config loading", () => {
     const repoRoot = getRepoRoot();
     const envPath = path.join(repoRoot, ".env");
     const originalEnvFile = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : null;
-    const originalBindRoot = process.env.OPENCLAW_REPO_BIND_ROOT;
+    const originalWorkspaceDir = process.env.OPENCLAW_WORKSPACE_DIR;
 
     fs.writeFileSync(
       envPath,
       [
         "OPENCLAW_GATEWAY_TOKEN=test-token",
         "GEMINI_API_KEY=test-gemini",
-        "OPENCLAW_REPO_BIND_ROOT=/mnt/c/from-dot-env",
+        "OPENCLAW_WORKSPACE_DIR=/mnt/c/from-dot-env/workspace",
       ].join("\n"),
       "utf8",
     );
     const envFileValues = loadDotEnvFile(envPath);
 
-    process.env.OPENCLAW_REPO_BIND_ROOT = "C:/conflicting/process/env";
+    process.env.OPENCLAW_WORKSPACE_DIR = "C:/conflicting/process/env/workspace";
     const loaded = loadRepoEnv(repoRoot);
 
-    expect(loaded.OPENCLAW_REPO_BIND_ROOT).toBe(envFileValues.OPENCLAW_REPO_BIND_ROOT);
+    expect(loaded.OPENCLAW_WORKSPACE_DIR).toBe(envFileValues.OPENCLAW_WORKSPACE_DIR);
 
-    if (originalBindRoot === undefined) {
-      delete process.env.OPENCLAW_REPO_BIND_ROOT;
+    if (originalWorkspaceDir === undefined) {
+      delete process.env.OPENCLAW_WORKSPACE_DIR;
     } else {
-      process.env.OPENCLAW_REPO_BIND_ROOT = originalBindRoot;
+      process.env.OPENCLAW_WORKSPACE_DIR = originalWorkspaceDir;
     }
 
     if (originalEnvFile === null) {
